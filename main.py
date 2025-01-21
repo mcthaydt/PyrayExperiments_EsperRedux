@@ -146,7 +146,7 @@ store = create_store(root_reducer, initial_state)
 def sync_ecs_with_store():
     state = store.get_state()
 
-    # Sync player position 
+    # Sync player position
     for _, (pos, _) in esper.get_components(Position, PlayerControlled):
         player_pos = state["player"]["position"]
         pos.x, pos.y = player_pos["x"], player_pos["y"]
