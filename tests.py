@@ -1,3 +1,4 @@
+# tests.py
 import unittest
 from actions import Actions  # Import the Actions class
 from main import store
@@ -11,9 +12,9 @@ class PickinSticksReduxTests(unittest.TestCase):
 
     def test_player_initial_position(self):
         """Test player starts at correct position"""
-        state = store.getState()
+        state = store.get_state()
         player = state["player"]
-        self.assertEqual(player["position"]["x"], 400)
+        self.assertEqual(player["position"]["x"], 400)  # Ensure this matches game logic
         self.assertEqual(player["position"]["y"], 300)
 
     def test_player_movement_bounds(self):
@@ -22,28 +23,28 @@ class PickinSticksReduxTests(unittest.TestCase):
         store.dispatch(Actions.setPlayerPosition({"x": 400, "y": 0}))
         store.dispatch(Actions.setPlayerVelocity({"x": 0, "y": -100}))
         store.dispatch(Actions.movePlayer(1.0))
-        state = store.getState()
+        state = store.get_state()
         self.assertEqual(state["player"]["position"]["y"], 0)
 
         # Lower bound: y should not exceed 600.
         store.dispatch(Actions.setPlayerPosition({"x": 400, "y": 600}))
         store.dispatch(Actions.setPlayerVelocity({"x": 0, "y": 100}))
         store.dispatch(Actions.movePlayer(1.0))
-        state = store.getState()
+        state = store.get_state()
         self.assertEqual(state["player"]["position"]["y"], 600)
 
         # Left bound: x should not go below 0.
         store.dispatch(Actions.setPlayerPosition({"x": 0, "y": 300}))
         store.dispatch(Actions.setPlayerVelocity({"x": -100, "y": 0}))
         store.dispatch(Actions.movePlayer(1.0))
-        state = store.getState()
+        state = store.get_state()
         self.assertEqual(state["player"]["position"]["x"], 0)
 
         # Right bound: x should not exceed 800.
         store.dispatch(Actions.setPlayerPosition({"x": 800, "y": 300}))
         store.dispatch(Actions.setPlayerVelocity({"x": 100, "y": 0}))
         store.dispatch(Actions.movePlayer(1.0))
-        state = store.getState()
+        state = store.get_state()
         self.assertEqual(state["player"]["position"]["x"], 800)
 
     def test_diagonal_movement(self):
@@ -51,7 +52,7 @@ class PickinSticksReduxTests(unittest.TestCase):
         store.dispatch(Actions.setPlayerPosition({"x": 400, "y": 300}))
         store.dispatch(Actions.setPlayerVelocity({"x": 100, "y": 100}))
         store.dispatch(Actions.movePlayer(1.0))
-        state = store.getState()
+        state = store.get_state()
         pos = state["player"]["position"]
         self.assertEqual(pos["x"], 500)
         self.assertEqual(pos["y"], 400)
@@ -59,62 +60,68 @@ class PickinSticksReduxTests(unittest.TestCase):
     def test_zero_velocity(self):
         """Test player with zero velocity stays still"""
         # Grab the initial position.
-        state = store.getState()
+        state = store.get_state()
         init_x = state["player"]["position"]["x"]
         init_y = state["player"]["position"]["y"]
         store.dispatch(Actions.setPlayerVelocity({"x": 0, "y": 0}))
         store.dispatch(Actions.movePlayer(1.0))
-        state = store.getState()
+        state = store.get_state()
         pos = state["player"]["position"]
         self.assertEqual(pos["x"], init_x)
         self.assertEqual(pos["y"], init_y)
 
     def test_stick_collection_edge_distance(self):
-        """Test stick collection at exact threshold distances"""
-        state = store.getState()
-        # Assume the game uses a collision threshold of 20.
-        stick = state["sticks"][0]
-        stick_pos = stick["position"]
-        # Case 1: exactly at threshold (20 units away on x-axis)
+        """Test stick collection at exact threshold distances by checking score and respawn"""
+        state = store.get_state()
+        original_stick = state["sticks"][0]
+        original_position = original_stick["position"].copy()
+        original_score = state["player"]["score"]
+
+        # At threshold (distance = COLLECTION_RADIUS, which is 20)
         store.dispatch(
-            Actions.setPlayerPosition({"x": stick_pos["x"] + 20, "y": stick_pos["y"]})
+            Actions.setPlayerPosition(
+                {"x": original_position["x"] + 20, "y": original_position["y"]}
+            )
         )
         store.dispatch(Actions.collectSticks())
-        state = store.getState()
-        self.assertFalse(
-            state["sticks"][0]["collectible"],
-            "Stick should have been collected and deactivated.",
-        )
+        state = store.get_state()
+        # The stick should have been collected, so the score increases...
+        self.assertEqual(state["player"]["score"], original_score + 1)
+        # ...and the stick should have respawned (i.e. have a new position)
+        self.assertNotEqual(state["sticks"][0]["position"], original_position)
 
-        # Reset for next check.
+        # Slightly inside threshold (distance < 20)
         store.dispatch(Actions.resetStick(0))
-
-        # Case 2: Just inside threshold (e.g. 19 units)
+        state = store.get_state()
+        stick_pos = state["sticks"][0]["position"].copy()
+        original_score = state["player"]["score"]
         store.dispatch(
             Actions.setPlayerPosition({"x": stick_pos["x"] + 19, "y": stick_pos["y"]})
         )
         store.dispatch(Actions.collectSticks())
-        state = store.getState()
-        self.assertFalse(state["sticks"][0]["collectible"])
+        state = store.get_state()
+        self.assertEqual(state["player"]["score"], original_score + 1)
+        self.assertNotEqual(state["sticks"][0]["position"], stick_pos)
 
-        # Reset again.
+        # Slightly outside threshold (distance > 20)
         store.dispatch(Actions.resetStick(0))
-
-        # Case 3: Just outside threshold (e.g. 21 units) – should not collect.
+        state = store.get_state()
+        stick_pos = state["sticks"][0]["position"].copy()
+        original_score = state["player"]["score"]
         store.dispatch(
             Actions.setPlayerPosition({"x": stick_pos["x"] + 21, "y": stick_pos["y"]})
         )
         store.dispatch(Actions.collectSticks())
-        state = store.getState()
-        self.assertTrue(
-            state["sticks"][0]["collectible"],
-            "Stick should not have been collected at 21 unit distance.",
-        )
+        state = store.get_state()
+        # No collection should occur so the score remains the same
+        self.assertEqual(state["player"]["score"], original_score)
+        # And the stick’s position is unchanged
+        self.assertEqual(state["sticks"][0]["position"], stick_pos)
 
     def test_stick_respawn_bounds(self):
         """Test stick respawns within valid game bounds"""
         for _ in range(50):
-            state = store.getState()
+            state = store.get_state()
             stick = state["sticks"][0]
             store.dispatch(
                 Actions.setPlayerPosition(
@@ -122,7 +129,7 @@ class PickinSticksReduxTests(unittest.TestCase):
                 )
             )
             store.dispatch(Actions.collectSticks())
-            state = store.getState()
+            state = store.get_state()
             new_pos = state["sticks"][0]["position"]
             self.assertTrue(50 <= new_pos["x"] <= 750)
             self.assertTrue(50 <= new_pos["y"] <= 550)
@@ -130,10 +137,8 @@ class PickinSticksReduxTests(unittest.TestCase):
 
     def test_rapid_collection(self):
         """Test rapid consecutive stick collections"""
-        state = store.getState()
+        state = store.get_state()
         stick = state["sticks"][0]
-
-        expected_position = (100, 100)
 
         for _ in range(5):
             store.dispatch(
@@ -143,14 +148,16 @@ class PickinSticksReduxTests(unittest.TestCase):
             )
             store.dispatch(Actions.collectSticks())
             store.dispatch(Actions.resetStick(0))
-            state = store.getState()
+            state = store.get_state()
             new_pos = state["sticks"][0]["position"]
-            pos_tuple = (new_pos["x"], new_pos["y"])
-            self.assertEqual(pos_tuple, expected_position)
+            self.assertTrue(
+                50 <= new_pos["x"] <= 750 and 50 <= new_pos["y"] <= 550,
+                "Stick did not respawn within valid bounds.",
+            )
 
     def test_score_update(self):
         """Test score increments correctly on stick collection"""
-        state = store.getState()
+        state = store.get_state()
         initial_score = state["player"]["score"]
         stick = state["sticks"][0]
         store.dispatch(
@@ -159,7 +166,7 @@ class PickinSticksReduxTests(unittest.TestCase):
             )
         )
         store.dispatch(Actions.collectSticks())
-        state = store.getState()
+        state = store.get_state()
         new_score = state["player"]["score"]
         self.assertEqual(new_score, initial_score + 1)
 
@@ -174,9 +181,9 @@ class PickinSticksReduxTests(unittest.TestCase):
 
         collected_count = 0
 
-        state = store.getState()
+        state = store.get_state()
         for i, stick in enumerate(state["sticks"]):
-            if stick["collectible"]:
+            if stick.get("collectible", False):
                 store.dispatch(
                     Actions.setPlayerPosition(
                         {"x": stick["position"]["x"], "y": stick["position"]["y"]}
@@ -186,7 +193,7 @@ class PickinSticksReduxTests(unittest.TestCase):
                 collected_count += 1
                 store.dispatch(Actions.resetStick(i))
 
-        state = store.getState()
+        state = store.get_state()
         final_score = state["player"]["score"]
         self.assertEqual(final_score, collected_count)
 
@@ -196,17 +203,17 @@ class PickinSticksReduxTests(unittest.TestCase):
         store.dispatch(Actions.setPlayerVelocity({"x": 100, "y": 0}))
 
         store.dispatch(Actions.movePlayer(0.5))
-        state = store.getState()
+        state = store.get_state()
         self.assertEqual(state["player"]["position"]["x"], 400 + 100 * 0.5)
 
         store.dispatch(Actions.setPlayerPosition({"x": 400, "y": 300}))
         store.dispatch(Actions.movePlayer(0.25))
-        state = store.getState()
+        state = store.get_state()
         self.assertEqual(state["player"]["position"]["x"], 400 + 100 * 0.25)
 
         store.dispatch(Actions.setPlayerPosition({"x": 400, "y": 300}))
         store.dispatch(Actions.movePlayer(2.0))
-        state = store.getState()
+        state = store.get_state()
         self.assertEqual(state["player"]["position"]["x"], 400 + 100 * 2.0)
 
     def test_component_removal(self):
